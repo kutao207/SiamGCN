@@ -151,7 +151,7 @@ class ChangeDataset(InMemoryDataset):
 if __name__ == '__main__':
     root_dir = 'F:/shrec2021/data'
 
-    train_dataset = ChDataset(root_dir, train=True)
+    train_dataset = ChangeDataset(root_dir, train=True)
     train_loader = DataLoader(train_dataset, batch_size=2, shuffle=False, num_workers=0)
 
     for data in train_loader:
