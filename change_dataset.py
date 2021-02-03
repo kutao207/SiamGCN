@@ -22,6 +22,11 @@ from utils import load_las, extract_area
 from utils import makedirs, files_exist, to_list, find_file
 
 
+def __repr__(obj):
+    if obj is None:
+        return 'None'
+    return re.sub('(<.*?)\\s.*(>)', r'\1\2', obj.__repr__())
+
 class ChangeDataset(InMemoryDataset):
     def __init__(self, root, train=True, clearance = 3, transform=None, pre_transform=None, pre_filter=None):        
         self.root = root
