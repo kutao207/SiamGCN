@@ -14,12 +14,194 @@ import pandas as pd
 
 import torch
 import torch.utils.data
+from torch import Tensor
+from torch_sparse import SparseTensor, cat
+from torch.utils.data.dataloader import default_collate
+from torch._six import container_abcs, string_classes, int_classes
 
-from torch_geometric.data import DataLoader, Data, InMemoryDataset
-
+import torch_geometric
+from torch_geometric.data import DataLoader, Data, InMemoryDataset, Batch
 
 from utils import load_las, extract_area
 from utils import makedirs, files_exist, to_list, find_file
+
+
+class ChangeBatch(Batch):
+    def __init__(self, batch=None, ptr=None, **kwargs):
+        super().__init__(batch=batch, ptr=ptr, **kwargs)
+    
+    @classmethod
+    def from_data_list(cls, data_list, follow_batch, exclude_keys):
+        r'''
+        datalist: A list object with `batch_size` elements, and each element is a `Data` object.
+        '''
+        keys = list(set(data_list[0].keys) - set(exclude_keys)) # ['y', 'x', 'x2', 'scene_num']
+        assert 'batch' not in keys and 'ptr' not in keys
+
+        batch = cls()
+        for key in data_list[0].__dict__.keys(): 
+            # ['x', 'edge_index', 'edge_attr', 'y', 'pos', 'normal', 'face', 'x2', 'scene_num']
+            if key[:2] != '__' and key[-2:] != '__':
+                batch[key] = None
+
+        batch.__num_graphs__ = len(data_list)
+        batch.__data_class__ = data_list[0].__class__
+        for key in keys + ['batch'] + ['batch2']:
+            batch[key] = []
+        batch['ptr'] = [0]
+        batch['ptr2'] = [0]
+
+        device = None
+        slices = {key: [0] for key in keys}
+        cumsum = {key: [0] for key in keys}
+        cat_dims = {}
+        num_nodes_list = []
+        for i, data in enumerate(data_list):
+            for key in keys: # keys: ['y', 'x', 'x2', 'scene_num']
+                item = data[key]
+
+                # Increase values by `cumsum` value.
+                cum = cumsum[key][-1]
+                if isinstance(item, Tensor) and item.dtype != torch.bool:
+                    if not isinstance(cum, int) or cum != 0:
+                        item = item + cum
+                elif isinstance(item, SparseTensor):
+                    value = item.storage.value()
+                    if value is not None and value.dtype != torch.bool:
+                        if not isinstance(cum, int) or cum != 0:
+                            value = value + cum
+                        item = item.set_value(value, layout='coo')
+                elif isinstance(item, (int, float)):
+                    item = item + cum
+
+                # Treat 0-dimensional tensors as 1-dimensional.
+                if isinstance(item, Tensor) and item.dim() == 0:
+                    item = item.unsqueeze(0)
+
+                batch[key].append(item)
+
+                # Gather the size of the `cat` dimension.
+                size = 1
+                cat_dim = data.__cat_dim__(key, data[key])
+                cat_dims[key] = cat_dim
+                if isinstance(item, Tensor):
+                    size = item.size(cat_dim)
+                    device = item.device
+                elif isinstance(item, SparseTensor):
+                    size = torch.tensor(item.sizes())[torch.tensor(cat_dim)]
+                    device = item.device()
+
+                slices[key].append(size + slices[key][-1])
+                inc = data.__inc__(key, item)
+                if isinstance(inc, (tuple, list)):
+                    inc = torch.tensor(inc)
+                cumsum[key].append(inc + cumsum[key][-1])
+
+                if key in follow_batch:
+                    if isinstance(size, Tensor):
+                        for j, size in enumerate(size.tolist()):
+                            tmp = f'{key}_{j}_batch'
+                            batch[tmp] = [] if i == 0 else batch[tmp]
+                            batch[tmp].append(
+                                torch.full((size, ), i, dtype=torch.long,
+                                           device=device))
+                    else:
+                        tmp = f'{key}_batch'
+                        batch[tmp] = [] if i == 0 else batch[tmp]
+                        batch[tmp].append(
+                            torch.full((size, ), i, dtype=torch.long,
+                                       device=device))
+
+            if hasattr(data, '__num_nodes__'):
+                num_nodes_list.append(data.__num_nodes__)
+            else:
+                num_nodes_list.append(None)
+
+            num_nodes = data.num_nodes
+            if num_nodes is not None:
+                item = torch.full((num_nodes, ), i, dtype=torch.long,
+                                  device=device)
+                batch.batch.append(item)
+                batch.ptr.append(batch.ptr[-1] + num_nodes)
+            num_nodes2 = data.x2.size(0)
+            if num_nodes2 is not None:
+                item = torch.full((num_nodes2, ), i, dtype=torch.long,
+                                  device=device)
+                batch.batch2.append(item)
+                batch.ptr2.append(batch.ptr2[-1] + num_nodes2)
+
+        # Fix initial slice values:
+        for key in keys:
+            slices[key][0] = slices[key][1] - slices[key][1]
+
+        batch.batch = None if len(batch.batch) == 0 else batch.batch
+        batch.ptr = None if len(batch.ptr) == 1 else batch.ptr
+        batch.batch2 = None if len(batch.batch2) == 0 else batch.batch2
+        batch.ptr2 = None if len(batch.ptr2) == 1 else batch.ptr2
+        batch.__slices__ = slices
+        batch.__cumsum__ = cumsum
+        batch.__cat_dims__ = cat_dims
+        batch.__num_nodes_list__ = num_nodes_list
+
+        ref_data = data_list[0]
+        for key in batch.keys:
+            items = batch[key]
+            item = items[0]
+            if isinstance(item, Tensor):
+                batch[key] = torch.cat(items, ref_data.__cat_dim__(key, item))
+            elif isinstance(item, SparseTensor):
+                batch[key] = cat(items, ref_data.__cat_dim__(key, item))
+            elif isinstance(item, (int, float)):
+                batch[key] = torch.tensor(items)
+
+        if torch_geometric.is_debug_enabled():
+            batch.debug()
+
+        return batch.contiguous()
+
+class ChangeCollater(object):
+    def __init__(self, follow_batch, exclude_keys):
+        self.follow_batch = follow_batch
+        self.exclude_keys = exclude_keys
+
+    def collate(self, batch):
+        elem = batch[0]
+        if isinstance(elem, Data):
+            return ChangeBatch.from_data_list(batch, self.follow_batch,
+                                        self.exclude_keys)
+        elif isinstance(elem, torch.Tensor):
+            return default_collate(batch)
+        elif isinstance(elem, float):
+            return torch.tensor(batch, dtype=torch.float)
+        elif isinstance(elem, int_classes):
+            return torch.tensor(batch)
+        elif isinstance(elem, string_classes):
+            return batch
+        elif isinstance(elem, container_abcs.Mapping):
+            return {key: self.collate([d[key] for d in batch]) for key in elem}
+        elif isinstance(elem, tuple) and hasattr(elem, '_fields'):
+            return type(elem)(*(self.collate(s) for s in zip(*batch)))
+        elif isinstance(elem, container_abcs.Sequence):
+            return [self.collate(s) for s in zip(*batch)]
+
+        raise TypeError('DataLoader found invalid type: {}'.format(type(elem)))
+
+    def __call__(self, batch):
+        return self.collate(batch)
+
+
+
+class MyDataLoader(torch.utils.data.DataLoader):
+    def __init__(self, dataset, batch_size=1, shuffle=False, follow_batch=[], exclude_keys=[], **kwargs):
+        if "collate_fn" in kwargs:
+            del kwargs["collate_fn"]
+
+        # Save for Pytorch Lightning...
+        self.follow_batch = follow_batch
+
+        super().__init__(dataset, batch_size, shuffle,
+                             collate_fn=ChangeCollater(follow_batch,
+                                                 exclude_keys), **kwargs)
 
 
 def __repr__(obj):
@@ -107,7 +289,7 @@ class ChangeDataset(InMemoryDataset):
 
         data_list = []
         i = 0
-        for file in csv_files:
+        for file in csv_files[0:4]:
             # scene_num = re.findall(r'^[0-9]', osp.basename(file))
 
             scene_num = osp.basename(file).split('_')[0]
@@ -133,9 +315,9 @@ class ChangeDataset(InMemoryDataset):
 
             for center, label in zip(centers, labels):
                 
-                x1 = torch.tensor(extract_area(points_16, center[0:2], self.clearance))                
+                x1 = torch.tensor(extract_area(points_16, center[0:2], self.clearance), dtype=torch.float)                
                 data = Data(x=x1)
-                data.x2 = torch.tensor(extract_area(points_20, center[0:2], self.clearance))
+                data.x2 = torch.tensor(extract_area(points_20, center[0:2], self.clearance), dtype=torch.float)
                 data.y = torch.tensor([label])
                 data.scene_num = torch.tensor([int(scene_num)])
                 data_list.append(data)

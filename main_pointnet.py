@@ -8,7 +8,8 @@ import torch_geometric.transforms as T
 from torch_geometric.data import DataLoader
 from torch_geometric.nn import PointConv, fps, radius, global_max_pool
 
-from change_dataset import ChangeDataset
+from change_dataset import ChangeDataset, MyDataLoader
+from transforms import NormalizeScale, SamplePoints
 
 from pointnet2 import SAModule, GlobalSAModule, MLP
 
@@ -16,8 +17,8 @@ from pointnet2 import SAModule, GlobalSAModule, MLP
 class Net(torch.nn.Module):
     def __init__(self):
         super().__init__()
-
-        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]))
+        input_feature_dim = 6
+        self.sa1_module = SAModule(0.5, 0.2, MLP([input_feature_dim, 64, 64, 128]))
         self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
         self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
@@ -26,8 +27,8 @@ class Net(torch.nn.Module):
         self.lin3 = Lin(256, 10)
 
     def forward(self, data):
-        sa0_b1_input = (data.x, data.x[:,:3], data.batch)
-        sa0_b2_input = (data.x2, data.x2[:,:3], data.batch)
+        sa0_b1_input = (data.x[:,3:], data.x[:,:3], data.batch)
+        sa0_b2_input = (data.x2[:,3:], data.x2[:,:3], data.batch2)
 
         sa1_b1_out = self.sa1_module(*sa0_b1_input)
         sa2_b1_out = self.sa2_module(*sa1_b1_out)
@@ -51,15 +52,22 @@ class Net(torch.nn.Module):
 
 def train(epoch):
     model.train()
-    correct = 0
+    if True:
+        correct = 0
+        # i = 0
     for data in train_loader:
         data = data.to(device)
         optimizer.zero_grad()
-        out = model(data)
-        loss = F.nll_loss(out, data.y)
+        
         if True:
+            # print(f"Iter {i}")
+            # i += 1
+            out = model(data)
+            loss = F.nll_loss(out, data.y)
             pred = out.max(1)[1]
             correct += pred.eq(data.y).sum().item()
+        else:
+            loss = F.nll_loss(model(data), data.y)
 
         loss.backward()
         optimizer.step()
@@ -81,10 +89,15 @@ def test(loader):
 if __name__ == '__main__':
     path = 'F:/shrec2021/data'
 
-    # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
-    train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
+    pre_transform, transform = NormalizeScale(), SamplePoints(1024)
 
-    train_loader = DataLoader(train_dataset, batch_size=2, shuffle=False, num_workers=0)
+    # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
+    # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
+    train_dataset = ChangeDataset(path, train=True, clearance=3, transform=transform, pre_transform=pre_transform)
+
+    # train_loader = DataLoader(train_dataset, batch_size=4, shuffle=False, num_workers=0)
+
+    train_loader = MyDataLoader(train_dataset, batch_size=4, shuffle=False, num_workers=0)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net().to(device)
@@ -94,6 +107,8 @@ if __name__ == '__main__':
         train(epoch)
         # train_acc = test(train_loader)
         # print('Epoch: {:03d}, Test: {:.4f}'.format(epoch, train_acc))
+
+        # print("Breakpoint")
 
 
 

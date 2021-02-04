@@ -59,10 +59,10 @@ class Net(torch.nn.Module):
         self.lin3 = Lin(256, 10)
 
     def forward(self, data):
-        sa0_out = (data.x, data.pos, data.batch)
-        sa1_out = self.sa1_module(*sa0_out)
-        sa2_out = self.sa2_module(*sa1_out)
-        sa3_out = self.sa3_module(*sa2_out)
+        sa0_out = (data.x, data.pos, data.batch) # pos: (batch_size x num_points, 3) = (32768, 3), batch: (32768)
+        sa1_out = self.sa1_module(*sa0_out) # (32*512, 128), (32*512, 3), (16384)
+        sa2_out = self.sa2_module(*sa1_out) # (32*128, 256), (32*128, 3), (4096)
+        sa3_out = self.sa3_module(*sa2_out) # (32*1, 1024), (32*1, 3), (32)
         x, pos, batch = sa3_out
 
         x = F.relu(self.lin1(x))
@@ -101,11 +101,11 @@ if __name__ == '__main__':
         osp.dirname(osp.realpath(__file__)), '..', 'data/ModelNet10')
     pre_transform, transform = T.NormalizeScale(), T.SamplePoints(1024)
 
-    train_dataset = ModelNet(path, '10', True)
-    test_dataset = ModelNet(path, '10', False)
+    # train_dataset = ModelNet(path, '10', True)
+    # test_dataset = ModelNet(path, '10', False)
 
-    # train_dataset = ModelNet(path, '10', True, transform, pre_transform)
-    # test_dataset = ModelNet(path, '10', False, transform, pre_transform)
+    train_dataset = ModelNet(path, '10', True, transform, pre_transform)
+    test_dataset = ModelNet(path, '10', False, transform, pre_transform)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True,
                               num_workers=6)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False,
