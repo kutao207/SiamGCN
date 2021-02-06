@@ -101,12 +101,9 @@ def inference(loader, path='best_pointnet_model.pth'):
     return correct / len(loader.dataset)
 
 
-
-
-
-
 if __name__ == '__main__':
     path = 'F:/shrec2021/data'
+    path = '/home/kt/cyclomedia_disk/kt/shrec2021/data'
     checkpoint_dir = 'checkpoints_main_pointnet'
 
     pre_transform, transform = NormalizeScale(), SamplePoints(1024)
@@ -118,8 +115,8 @@ if __name__ == '__main__':
 
     # train_loader = DataLoader(train_dataset, batch_size=4, shuffle=False, num_workers=0)
 
-    train_loader = MyDataLoader(train_dataset, batch_size=4, shuffle=True, num_workers=4)
-    test_loader = MyDataLoader(test_dataset, batch_size=4, shuffle=False, num_workers=4)
+    train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=4)
+    test_loader = MyDataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net().to(device)
@@ -128,7 +125,6 @@ if __name__ == '__main__':
     test_accs = []
     max_acc = 0
     for epoch in range(1, 201):
-
         train(epoch)
         test_acc = test(train_loader)
         if test_acc > max_acc:

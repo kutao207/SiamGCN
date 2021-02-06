@@ -296,11 +296,8 @@ class ChangeDataset(InMemoryDataset):
             #     scene_num = scene_num[0]
 
             f16 = find_file(files_2016, scene_num)
-            f20 = find_file(files_2020, scene_num)
-
-            print(f"Processing {i+1}/{len(csv_files)} --> {osp.basename(file)} scene_num={scene_num}")
-            i+=1
-
+            f20 = find_file(files_2020, scene_num)        
+            
             df = pd.read_csv(file)
             centers = df[["x", "y", "z"]].to_numpy()
             label_names = df["classification"].to_list()
@@ -308,6 +305,9 @@ class ChangeDataset(InMemoryDataset):
 
             points_16, h16 = load_las(f16)
             points_20, h20 = load_las(f20)
+
+            i+=1
+            print(f"Processing {dataset} set {i}/{len(csv_files)} --> {osp.basename(file)} scene_num={scene_num} finding {len(centers)} objects")
 
             for center, label in zip(centers, labels):
                 
