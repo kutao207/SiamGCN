@@ -239,11 +239,9 @@ class ChangeDataset(InMemoryDataset):
         # return ['training.pt', 'test.pt']
         return ['training_'+ f'{self.clearance}'+ '.pt', 'test_'+ f'{self.clearance}'+ '.pt']
     
-    def process(self):
-        if self.train is True:
-            torch.save(self.process_set('train'), self.processed_paths[0])
-        else:
-            torch.save(self.process_set('test'), self.processed_paths[1])
+    def process(self):        
+        torch.save(self.process_set('train'), self.processed_paths[0])        
+        torch.save(self.process_set('test'), self.processed_paths[1])
 
     def _process(self):
         f = osp.join(self.processed_dir, 'pre_transoform_'+ f'{self.clearance}'+ '.pt')
@@ -280,16 +278,14 @@ class ChangeDataset(InMemoryDataset):
 
         print('Done!')
 
-    def process_set(self, dataset):
-        data_2016 = osp.join(self.root, '2016')
-        data_2020 = osp.join(self.root, '2020')
+    def process_set(self, dataset):        
         csv_files = sorted(glob.glob(osp.join(self.root, dataset, '*.csv')))
-        files_2016 = glob.glob(osp.join(data_2016, '*.laz'))
-        files_2020 = glob.glob(osp.join(data_2020, '*.laz'))
+        files_2016 = glob.glob(osp.join(self.data_2016, '*.laz'))
+        files_2020 = glob.glob(osp.join(self.data_2020, '*.laz'))
 
         data_list = []
         i = 0
-        for file in csv_files[0:4]:
+        for file in csv_files:
             # scene_num = re.findall(r'^[0-9]', osp.basename(file))
 
             scene_num = osp.basename(file).split('_')[0]
@@ -331,12 +327,20 @@ class ChangeDataset(InMemoryDataset):
         return self.collate(data_list)
 
 if __name__ == '__main__':
+
+    from transforms import NormalizeScale, SamplePoints
+    pre_transform, transform = NormalizeScale(), SamplePoints(1024)
+
     root_dir = 'F:/shrec2021/data'
 
-    train_dataset = ChangeDataset(root_dir, train=True)
-    train_loader = DataLoader(train_dataset, batch_size=2, shuffle=False, num_workers=0)
+    train_dataset = ChangeDataset(root_dir, train=True, clearance=3, transform=transform, pre_transform=pre_transform)
+    test_dataset = ChangeDataset(root_dir, train=False, clearance=3, transform=transform, pre_transform=pre_transform)
 
-    for data in train_loader:
-        print(data.x.shape)
+    print("Dataset finished!")
+
+    # train_loader = DataLoader(train_dataset, batch_size=2, shuffle=False, num_workers=0)
+
+    # for data in train_loader:
+    #     print(data.x.shape)
 
 

@@ -85,28 +85,56 @@ def test(loader):
         correct += pred.eq(data.y).sum().item()
     return correct / len(loader.dataset)
 
+def inference(loader, path='best_pointnet_model.pth'):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = Net().to(device)
+
+    model.load_state_dict(torch.load(path))
+    model.eval()
+
+    correct = 0
+    for data in loader:
+        data = data.to(device)
+        with torch.no_grad():
+            pred = model(data).max(1)[1]
+        correct += pred.eq(data.y).sum().item()
+    return correct / len(loader.dataset)
+
+
+
+
+
 
 if __name__ == '__main__':
     path = 'F:/shrec2021/data'
+    checkpoint_dir = 'checkpoints_main_pointnet'
 
     pre_transform, transform = NormalizeScale(), SamplePoints(1024)
 
     # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
     # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
     train_dataset = ChangeDataset(path, train=True, clearance=3, transform=transform, pre_transform=pre_transform)
+    test_dataset = ChangeDataset(path, train=False, clearance=3, transform=transform, pre_transform=pre_transform)
 
     # train_loader = DataLoader(train_dataset, batch_size=4, shuffle=False, num_workers=0)
 
-    train_loader = MyDataLoader(train_dataset, batch_size=4, shuffle=False, num_workers=0)
+    train_loader = MyDataLoader(train_dataset, batch_size=4, shuffle=True, num_workers=4)
+    test_loader = MyDataLoader(test_dataset, batch_size=4, shuffle=False, num_workers=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
+    test_accs = []
+    max_acc = 0
     for epoch in range(1, 201):
+
         train(epoch)
-        # train_acc = test(train_loader)
-        # print('Epoch: {:03d}, Test: {:.4f}'.format(epoch, train_acc))
+        test_acc = test(train_loader)
+        if test_acc > max_acc:
+            torch.save(model.state_dict(), 'best_pointnet_model.pth')
+            max_acc = test_acc
+        print('Epoch: {:03d}, Test: {:.4f}'.format(epoch, test_acc))
 
         # print("Breakpoint")
 
