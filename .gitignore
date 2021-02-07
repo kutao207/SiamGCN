@@ -134,4 +134,6 @@ pytorch_geometric/
 torch_geometric/
 pytorch_cluster/
 torch_cluster*/
+imbalanced-learn/
+imblearn/
 backup/

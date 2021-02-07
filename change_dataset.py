@@ -25,6 +25,7 @@ from torch_geometric.data import DataLoader, Data, InMemoryDataset, Batch
 from utils import load_las, extract_area
 from utils import makedirs, files_exist, to_list, find_file
 
+from imblearn.over_sampling import RandomOverSampler
 
 class ChangeBatch(Batch):
     def __init__(self, batch=None, ptr=None, **kwargs):
@@ -210,15 +211,27 @@ def __repr__(obj):
     return re.sub('(<.*?)\\s.*(>)', r'\1\2', obj.__repr__())
 
 class ChangeDataset(InMemoryDataset):
-    def __init__(self, root, train=True, clearance = 3, transform=None, pre_transform=None, pre_filter=None):        
+    def __init__(self, root, train=True, clearance = 3, ignore_labels=[], transform=None, pre_transform=None, pre_filter=None):        
         self.root = root
         self.train = train
         self.clearance = clearance
+        self.ignore_labels = ignore_labels
         self.data_2016 = osp.join(root, '2016')
         self.data_2020 = osp.join(root, '2020')
         self.train_csv_dir = osp.join(root, 'train')
 
-        self.class_labels = ['nochange','removed',"added",'change',"color_change","unfit"]
+        self.class_labels = ['nochange','removed',"added",'change',"color_change"]
+
+        if len(self.ignore_labels) > 0:
+            rm_labels = []
+            for l in self.ignore_labels:
+                if l in self.class_labels:
+                    self.class_labels.remove(l)
+                    rm_labels.append(l)
+            print(f"Labels {rm_labels} have been removed!")
+            if len(self.ignore_labels) == 0:
+                raise ValueError("All labels have been ignored!!")
+
         self.labels_to_names_dict = {i:v for i, v in enumerate(self.class_labels)}
         self.names_to_labels_dict = {v:i for i, v in enumerate(self.class_labels)}
 
@@ -244,6 +257,7 @@ class ChangeDataset(InMemoryDataset):
         torch.save(self.process_set('test'), self.processed_paths[1])
 
     def _process(self):
+
         f = osp.join(self.processed_dir, 'pre_transoform_'+ f'{self.clearance}'+ '.pt')
         if osp.exists(f) and torch.load(f) != __repr__(self.pre_transform):
             logging.warning(
@@ -258,6 +272,10 @@ class ChangeDataset(InMemoryDataset):
                 'pre-processed version of this dataset. If you really want to '
                 'make use of another pre-fitering technique, make sure to '
                 'delete `{}` first.'.format(self.processed_dir))
+
+        f = osp.join(self.processed_dir, 'label_names_'+ f'{self.clearance}'+ '.pt')
+        if osp.exists(f) and torch.load(f) != '_'.join(self.class_labels):
+            logging.warning('The `class_labels` argument differs from last used one. You may have ignored some class names.')
 
         path = self.processed_paths[0] if self.train else self.processed_paths[1]
         # if files_exist(self.processed_paths):  # pragma: no cover
@@ -275,6 +293,9 @@ class ChangeDataset(InMemoryDataset):
         torch.save(__repr__(self.pre_transform), path)
         path = osp.join(self.processed_dir, 'pre_filter_'+ f'{self.clearance}'+ '.pt')
         torch.save(__repr__(self.pre_filter), path)
+
+        path = osp.join(self.processed_dir, 'label_names_'+ f'{self.clearance}'+ '.pt')
+        torch.save('_'.join(self.class_labels), path)
 
         print('Done!')
 
@@ -301,7 +322,7 @@ class ChangeDataset(InMemoryDataset):
             df = pd.read_csv(file)
             centers = df[["x", "y", "z"]].to_numpy()
             label_names = df["classification"].to_list()
-            labels = self.names_to_labels(label_names)
+            # labels = self.names_to_labels(label_names)
 
             points_16, h16 = load_las(f16)
             points_20, h20 = load_las(f20)
@@ -309,7 +330,12 @@ class ChangeDataset(InMemoryDataset):
             i+=1
             print(f"Processing {dataset} set {i}/{len(csv_files)} --> {osp.basename(file)} scene_num={scene_num} finding {len(centers)} objects")
 
-            for center, label in zip(centers, labels):
+            for center, label in zip(centers, label_names):
+
+                if label in self.ignore_labels:
+                    continue
+                else:
+                    label = self.names_to_labels_dict[label]
                 
                 x1 = torch.tensor(extract_area(points_16, center[0:2], self.clearance), dtype=torch.float)                
                 data = Data(x=x1)

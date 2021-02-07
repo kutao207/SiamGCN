@@ -1,8 +1,11 @@
 from __future__ import print_function
+import itertools
+
 import numpy as np
 from pprint import pprint
 from sklearn.metrics import confusion_matrix as skl_get_confusion_matrix
 
+import matplotlib.pyplot as plt
 
 class ConfusionMatrix:
     def __init__(self, num_classes):
@@ -82,6 +85,10 @@ class ConfusionMatrix:
         valid_confusion_matrix = self.confusion_matrix[1:, 1:]
         return np.trace(valid_confusion_matrix) / np.sum(valid_confusion_matrix)
 
+    def get_per_class_accuracy(self):
+        valid_confusion_matrix = self.confusion_matrix[1:, 1:]
+        return np.diag(valid_confusion_matrix) / np.sum(valid_confusion_matrix, axis=1)
+
     def print_metrics(self, labels=None):
         # 1. Confusion matrix
         print("Confusion matrix:")
@@ -122,6 +129,54 @@ class ConfusionMatrix:
         # 4. Overall accuracy
         print("Overall accuracy")
         print(self.get_accuracy())
+
+        print("Per class accuracy")
+        print(self.get_per_class_accuracy())
+
+
+def plot_confusion_matrix(cm, classes, normalize=False, title="Confusion Matrix", cmap=plt.cm.Blues):
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=0)
+    plt.yticks(tick_marks, classes)
+
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0], cm.shape[1])):
+        plt.text(j, i, cm[i, j], horizontalalignment='center', color='white' if cm[i,j] > thresh else 'black')
+    
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+
+def show_metrics(cm):
+    tp = cm[1,1]
+    fn = cm[1,0]
+    fp = cm[0,1]
+    tn = cm[0,0]
+    precision = tp / (tp+fp)
+    recall = tp/(tp+fn)
+    f1_score = 2*precision * recall / (precision + recall)
+
+def plot_precision_recall(recall, precision):
+    plt.step(recall, precision, color='b', alpha=0.2, where='post')
+    plt.fill_between(recall, precision, step='post', alpha=0.2, color='b')
+    plt.plot(recall, precision, linewidth=2)
+    plt.xlim([0.0,1])
+    plt.ylim([0.0,1.05])
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title("Precision Recall Curve")
+    plt.show()
+
+def plot_roc(fpr, tpr):
+    pass
+
+def plot_feature_importance(model):
+    pass
+
+
 
 if __name__ == "__main__":
     # Test data

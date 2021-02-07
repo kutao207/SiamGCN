@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     test_acc = inference(test_loader)
 
-    print("Test accuracy: {:.2f}".format(test_acc))
+    print("Test accuracy: {:.5f}".format(test_acc))
 
 
 
