@@ -186,6 +186,8 @@ if __name__ == '__main__':
 
     if USING_FOCAL_LOSS:
         print("Using focal loss!")
+    if USING_IMBALANCE_SAMPLING:
+        print("Using imbalance over sampling!")
 
     pre_transform, transform = NormalizeScale(), SamplePoints(1024)
     
@@ -205,6 +207,7 @@ if __name__ == '__main__':
         train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=4)
     else:
         train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=False, num_workers=4, sampler=sampler)
+        
     test_loader = MyDataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -223,7 +226,7 @@ if __name__ == '__main__':
         scheduler.step()
 
         if test_acc > max_acc:
-            torch.save(model.state_dict(), 'best_pointnet_cas_model.pth')
+            torch.save(model.state_dict(), 'best_pointnet_model.pth')
             max_acc = test_acc
         
 
