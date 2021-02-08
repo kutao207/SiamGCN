@@ -1,3 +1,4 @@
+import os
 import os.path as osp
 
 import torch 
@@ -173,8 +174,12 @@ def inference(loader, path='best_pointnet_model.pth'):
 
 
 if __name__ == '__main__':
-    path = 'F:/shrec2021/data'
+    
     path = '/home/kt/cyclomedia_disk/kt/shrec2021/data'
+
+    if os.name == 'nt':
+        path = 'F:/shrec2021/data'  
+
     checkpoint_dir = 'checkpoints_main_pointnet'
 
     ignore_labels = ['nochange']
@@ -183,7 +188,7 @@ if __name__ == '__main__':
         print("Using focal loss!")
 
     pre_transform, transform = NormalizeScale(), SamplePoints(1024)
-    sampler = ImbalancedDatasetSampler
+    
 
     # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
     # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
@@ -191,6 +196,8 @@ if __name__ == '__main__':
     test_dataset = ChangeDataset(path, train=False, clearance=3, ignore_labels=ignore_labels, transform=transform, pre_transform=pre_transform)
 
     NUM_CLASS = len(train_dataset.class_labels)
+
+    sampler = ImbalancedDatasetSampler(train_dataset)
 
     # train_loader = DataLoader(train_dataset, batch_size=4, shuffle=False, num_workers=0)
 

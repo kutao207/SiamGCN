@@ -2,6 +2,7 @@ import torch
 import torch.utils.data
 import torchvision
 
+from change_dataset import ChangeDataset
 
 class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
     """Samples elements randomly from a given list of indices for imbalanced dataset
@@ -49,6 +50,8 @@ class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
             return dataset.imgs[idx][1]
         elif isinstance(dataset, torch.utils.data.Subset):
             return dataset.dataset.imgs[idx][1]
+        elif isinstance(dataset, ChangeDataset):
+            return dataset[idx].y.tolist()[0]
         else:
             raise NotImplementedError
                 
