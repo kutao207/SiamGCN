@@ -13,6 +13,7 @@ from change_dataset import ChangeDataset, MyDataLoader
 from transforms import NormalizeScale, SamplePoints
 from metric import ConfusionMatrix
 from focal_loss import focal_loss
+from imbalanced_sampler import ImbalancedDatasetSampler
 
 from pointnet2 import SAModule, GlobalSAModule, MLP
 
@@ -20,7 +21,8 @@ from pointnet2 import SAModule, GlobalSAModule, MLP
 # ["nochange","removed","added","change","color_change"]
 
 NUM_CLASS = 5
-USING_FOCAL_LOSS = True
+USING_FOCAL_LOSS = False
+USING_IMBALANCE_SAMPLING = True
 
 class Net_cas(torch.nn.Module):
     def __init__(self) -> None:
@@ -181,6 +183,7 @@ if __name__ == '__main__':
         print("Using focal loss!")
 
     pre_transform, transform = NormalizeScale(), SamplePoints(1024)
+    sampler = ImbalancedDatasetSampler
 
     # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
     # train_dataset = ChangeDataset(path, train=True, clearance=3, transform=None, pre_transform=None)
@@ -191,7 +194,10 @@ if __name__ == '__main__':
 
     # train_loader = DataLoader(train_dataset, batch_size=4, shuffle=False, num_workers=0)
 
-    train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=4)
+    if not USING_IMBALANCE_SAMPLING:
+        train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=4)
+    else:
+        train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=False, num_workers=4, sampler=sampler)
     test_loader = MyDataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
