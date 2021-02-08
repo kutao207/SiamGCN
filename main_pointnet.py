@@ -201,8 +201,8 @@ if __name__ == '__main__':
     test_loader = MyDataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # model = Net().to(device)
-    model = Net_cas().to(device)
+    model = Net().to(device)
+    # model = Net_cas().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     scheduler = StepLR(optimizer, step_size=15, gamma=0.1)
