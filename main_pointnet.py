@@ -3,7 +3,7 @@ import os.path as osp
 
 import torch 
 import torch.nn.functional as F
-from torch.nn import Sequential as Seq, Linear as Lin, ReLU, BatchNorm1d as BN
+from torch.nn import Sequential as Seq, Linear as Lin, ReLU, BatchNorm1d as BN, Dropout
 from torch.optim.lr_scheduler import StepLR
 
 import torch_geometric.transforms as T
@@ -13,7 +13,10 @@ from torch_geometric.nn import PointConv, fps, radius, global_max_pool
 from change_dataset import ChangeDataset, MyDataLoader
 from transforms import NormalizeScale, SamplePoints
 from metric import ConfusionMatrix
+
 from focal_loss import focal_loss
+from contrastive_loss import ContrastiveLoss
+
 from imbalanced_sampler import ImbalancedDatasetSampler
 
 from pointnet2 import SAModule, GlobalSAModule, MLP
@@ -24,6 +27,7 @@ from pointnet2 import SAModule, GlobalSAModule, MLP
 NUM_CLASS = 5
 USING_FOCAL_LOSS = False
 USING_IMBALANCE_SAMPLING = True
+USING_CONTRASTIVE_LOSS = True
 
 class Net_cas(torch.nn.Module):
     def __init__(self) -> None:
@@ -70,7 +74,6 @@ class Net_cas(torch.nn.Module):
         return F.log_softmax(x, dim=-1)
 
 
-
 class Net(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -107,9 +110,58 @@ class Net(torch.nn.Module):
         x = self.lin3(x)
         return F.log_softmax(x, dim=-1)
 
+class Net_con(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        input_feature_dim = 6
+        self.sa1_module = SAModule(0.5, 0.2, MLP([input_feature_dim, 64, 64, 128]))
+        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
+        self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
+
+        # self.lin1 = Lin(1024, 512)
+        # self.lin2 = Lin(512, 256)
+        # self.lin3 = Lin(256, NUM_CLASS)
+
+        self.lin = Seq(
+            Lin(1024, 512), ReLU(), Dropout(p=0.5),
+            Lin(512, 256), ReLU(), Dropout(p=0.5),
+            Lin(256, NUM_CLASS)
+            )
+
+    def forward(self, data):
+        sa0_b1_input = (data.x[:,3:], data.x[:,:3], data.batch)
+        sa0_b2_input = (data.x2[:,3:], data.x2[:,:3], data.batch2)
+
+        sa1_b1_out = self.sa1_module(*sa0_b1_input)
+        sa2_b1_out = self.sa2_module(*sa1_b1_out)
+        sa3_b1_out = self.sa3_module(*sa2_b1_out)
+
+        sa1_b2_out = self.sa1_module(*sa0_b2_input)
+        sa2_b2_out = self.sa2_module(*sa1_b2_out)
+        sa3_b2_out = self.sa3_module(*sa2_b2_out)
+
+        x1, pos1, _ = sa3_b1_out
+        x2, pos2, _ = sa3_b2_out
+
+        # x = x1 + x2
+
+        # x = F.relu(self.lin1(x))
+        # x = F.dropout(x, p=0.5, training=self.training)
+        # x = F.relu(self.lin2(x))
+        # x = F.dropout(x, p=0.5, training=self.training)
+        # x = self.lin3(x)
+        # return F.log_softmax(x, dim=-1)
+        x1_out = F.log_softmax(self.lin(x1), dim=-1)
+        x2_out = F.log_softmax(self.lin(x2), dim=-1)
+
+        return (x1_out, x2_out)
+
+
 def train(epoch):
     model.train()
     confusion_matrix = ConfusionMatrix(NUM_CLASS+1)
+   
+
     if True:
         correct = 0
         # i = 0
@@ -122,8 +174,10 @@ def train(epoch):
             # i += 1
             out = model(data)
 
-            if USING_FOCAL_LOSS:
-                loss = focal_loss(out, data.y, alpha=0.5, reduction='mean')
+            # if USING_FOCAL_LOSS:
+            #     loss = focal_loss(out, data.y, alpha=0.5, reduction='mean')
+            if USING_CONTRASTIVE_LOSS:
+                loss = criterion(out[0], out[1], data.y)
             else:
                 loss = F.nll_loss(out, data.y)
             pred = out.max(1)[1]
@@ -188,6 +242,8 @@ if __name__ == '__main__':
         print("Using focal loss!")
     if USING_IMBALANCE_SAMPLING:
         print("Using imbalance over sampling!")
+    if USING_CONTRASTIVE_LOSS:
+        print("Using contrastive loss!")
 
     pre_transform, transform = NormalizeScale(), SamplePoints(1024)
     
@@ -201,6 +257,9 @@ if __name__ == '__main__':
 
     sampler = ImbalancedDatasetSampler(train_dataset)
 
+    if USING_CONTRASTIVE_LOSS:
+        criterion = ContrastiveLoss()
+
     # train_loader = DataLoader(train_dataset, batch_size=4, shuffle=False, num_workers=0)
 
     if not USING_IMBALANCE_SAMPLING:
@@ -211,7 +270,11 @@ if __name__ == '__main__':
     test_loader = MyDataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=4)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = Net().to(device)
+
+    if USING_CONTRASTIVE_LOSS:
+        model = Net_con().to(device)
+    else:
+        model = Net().to(device)
     # model = Net_cas().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -226,7 +289,7 @@ if __name__ == '__main__':
         scheduler.step()
 
         if test_acc > max_acc:
-            torch.save(model.state_dict(), 'best_pointnet_model.pth')
+            torch.save(model.state_dict(), 'best_pointnet_model_con.pth')
             max_acc = test_acc
         
 
