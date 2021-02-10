@@ -159,6 +159,83 @@ class Net_con(torch.nn.Module):
 
         return (x1_out, x2_out)
 
+class Net_2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        input_feature_dim = 6
+        self.sa1_module = SAModule(0.5, 0.2, MLP([input_feature_dim, 64, 64, 128]))
+        # self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
+        # self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
+        self.sa3_module = GlobalSAModule(MLP([128 + 3, 256, 512, 1024]))
+
+        # self.lin1 = Lin(1024, 512)
+        # self.lin2 = Lin(512, 256)
+        # self.lin3 = Lin(256, NUM_CLASS)
+
+        # self.lin = Seq(
+        #     Lin(1024, 512), ReLU(), Dropout(p=0.5),
+        #     Lin(512, 256), ReLU(), Dropout(p=0.5)            
+        #     )
+        # self.lin_1 = Lin(256, NUM_CLASS)
+        # self.lin_2 = Lin(256, NUM_CLASS)
+
+        self.lin = Seq(
+            Lin(1024, 256), ReLU(), Dropout(p=0.5)         
+            )
+        self.lin_1 = Lin(256, 128)
+        self.lin_2 = Lin(256, 128)
+
+        self.lin_last = Lin(128, NUM_CLASS)
+
+    def forward(self, data):
+        sa0_b1_input = (data.x[:,3:], data.x[:,:3], data.batch)
+        sa0_b2_input = (data.x2[:,3:], data.x2[:,:3], data.batch2)
+
+        # Using less layers
+
+        # sa1_b1_out = self.sa1_module(*sa0_b1_input)
+        # sa2_b1_out = self.sa2_module(*sa1_b1_out)
+        # sa3_b1_out = self.sa3_module(*sa2_b1_out)
+
+        # sa1_b2_out = self.sa1_module(*sa0_b2_input)
+        # sa2_b2_out = self.sa2_module(*sa1_b2_out)
+        # sa3_b2_out = self.sa3_module(*sa2_b2_out)
+
+        sa1_b1_out = self.sa1_module(*sa0_b1_input)        
+        sa3_b1_out = self.sa3_module(*sa1_b1_out)
+
+        sa1_b2_out = self.sa1_module(*sa0_b2_input)        
+        sa3_b2_out = self.sa3_module(*sa1_b2_out)
+
+        x1, pos1, _ = sa3_b1_out
+        x2, pos2, _ = sa3_b2_out
+
+        x = x1 - x2
+
+        x = self.lin(x)
+        x1, x2 = self.lin_1(x), self.lin_2(x)
+        x_out = F.dropout(F.relu(x1-x2), p=0.6)
+
+        x_out = self.lin_last(x_out)
+
+        return F.log_softmax(x, dim=-1)
+
+        # x = x1 + x2
+
+        # x = F.relu(self.lin1(x))
+        # x = F.dropout(x, p=0.5, training=self.training)
+        # x = F.relu(self.lin2(x))
+        # x = F.dropout(x, p=0.5, training=self.training)
+        # x = self.lin3(x)
+        # return F.log_softmax(x, dim=-1)
+
+        # x1 = self.lin(x1)
+        # x2 = self.lin(x2)
+        # x1_out = F.log_softmax(self.lin_1(x1), dim=-1)
+        # x2_out = F.log_softmax(self.lin_2(x2), dim=-1)
+
+        # return (x1_out, x2_out)
+
 
 def train(epoch):
     model.train()
@@ -277,7 +354,8 @@ if __name__ == '__main__':
     if USING_CONTRASTIVE_LOSS:
         model = Net_con().to(device)
     else:
-        model = Net().to(device)
+        model = Net_2().to(device)
+        print("Using Net -> Net_2()")
     # model = Net_cas().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -292,7 +370,7 @@ if __name__ == '__main__':
         scheduler.step()
 
         if test_acc > max_acc:
-            torch.save(model.state_dict(), 'best_pointnet_model_con.pth')
+            torch.save(model.state_dict(), 'best_pointnet_model_net2.pth')
             max_acc = test_acc
         
 
