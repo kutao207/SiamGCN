@@ -27,7 +27,7 @@ from pointnet2 import SAModule, GlobalSAModule, MLP
 NUM_CLASS = 5
 USING_FOCAL_LOSS = False
 USING_IMBALANCE_SAMPLING = True
-USING_CONTRASTIVE_LOSS = True
+USING_CONTRASTIVE_LOSS = False
 
 class Net_cas(torch.nn.Module):
     def __init__(self) -> None:
@@ -124,9 +124,10 @@ class Net_con(torch.nn.Module):
 
         self.lin = Seq(
             Lin(1024, 512), ReLU(), Dropout(p=0.5),
-            Lin(512, 256), ReLU(), Dropout(p=0.5),
-            Lin(256, NUM_CLASS)
+            Lin(512, 256), ReLU(), Dropout(p=0.5)            
             )
+        self.lin_1 = Lin(256, NUM_CLASS)
+        self.lin_2 = Lin(256, NUM_CLASS)
 
     def forward(self, data):
         sa0_b1_input = (data.x[:,3:], data.x[:,:3], data.batch)
@@ -151,8 +152,10 @@ class Net_con(torch.nn.Module):
         # x = F.dropout(x, p=0.5, training=self.training)
         # x = self.lin3(x)
         # return F.log_softmax(x, dim=-1)
-        x1_out = F.log_softmax(self.lin(x1), dim=-1)
-        x2_out = F.log_softmax(self.lin(x2), dim=-1)
+        x1 = self.lin(x1)
+        x2 = self.lin(x2)
+        x1_out = F.log_softmax(self.lin_1(x1), dim=-1)
+        x2_out = F.log_softmax(self.lin_2(x2), dim=-1)
 
         return (x1_out, x2_out)
 
