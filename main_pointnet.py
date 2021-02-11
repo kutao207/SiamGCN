@@ -316,7 +316,7 @@ if __name__ == '__main__':
 
     checkpoint_dir = 'checkpoints_main_pointnet'
 
-    ignore_labels = ['nochange']
+    ignore_labels = [] # ['nochange']
 
     if USING_FOCAL_LOSS:
         print("Using focal loss!")
