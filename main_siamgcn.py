@@ -1,0 +1,124 @@
+import os.path as osp
+
+import torch
+import torch.nn.functional as F
+from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Dropout
+from torch.optim.lr_scheduler import StepLR
+
+import torch_geometric
+
+from change_dataset import ChangeDataset, MyDataLoader
+from transforms import NormalizeScale, SamplePoints
+from metric import ConfusionMatrix
+from imbalanced_sampler import ImbalancedDatasetSampler
+
+#     0           1       2         3         4
+# ["nochange","removed","added","change","color_change"]
+
+NUM_CLASS = 5
+USING_IMBALANCE_SAMPLING = True
+
+class Net(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+
+    
+    def forward(self, data):
+        r""""
+        Args:
+            data: [x], BN x 6, point clouds of 2016
+                  [x2], BN x 6, point clouds of 2020
+                  [batch], BN1, batch index of point clouds in 2016
+                  [batch2], BN2, batch index of point clouds in 2020
+                  [y], B, label
+        Returns:
+            out: []， Bx[NUM_CLASS]
+        """
+
+        b1_input = (data.x[:, 3:], data.x2[:, 3:6], data.batch)
+        b2_input = (data.x2[:,3:], data.x2[:,:3], data.batch2)
+
+def train(epoch):
+    model.train()
+
+    confusion_matrix = ConfusionMatrix(NUM_CLASS + 1)
+
+    correct = 0
+    for data in train_loader:
+        data = data.to(device)
+        optimizer.zero_grad()        
+
+        out = model(data)
+        loss = F.nll_loss(out, data.y)
+        pred = out.max(1)[1]
+        correct += pred.eq(data.y).sum().item()        
+
+        loss.backward()
+        optimizer.step()
+
+        confusion_matrix.increment_from_list(data.y.cpu().detach().numpy() + 1, pred.cpu().detach().numpy() + 1)
+    
+    train_acc = correct / len(train_loader.dataset)
+    print('Epoch: {:03d}, Train: {:.4f}, per_class_acc: {}'.format(epoch, train_acc, confusion_matrix.get_per_class_accuracy()))
+
+def test(loader):
+    model.eval()
+    confusion_matrix = ConfusionMatrix(NUM_CLASS+1)
+    correct = 0
+    for data in loader:
+        data = data.to(device)
+        with torch.no_grad():
+            pred = model(data).max(1)[1]
+        correct += pred.eq(data.y).sum().item()
+
+        confusion_matrix.increment_from_list(data.y.cpu().detach().numpy() + 1, pred.cpu().detach().numpy() + 1)
+    test_acc = correct / len(loader.dataset)
+
+    print('Epoch: {:03d}, Test: {:.4f}, per_class_acc: {}'.format(epoch, test_acc, confusion_matrix.get_per_class_accuracy()))
+
+    return test_acc
+
+
+if __name__ == '__main__':
+
+    data_root_path = '/home/kt/cyclomedia_disk/kt/shrec2021/data'
+    if os.name == 'nt':
+        data_root_path = 'F:/shrec2021/data'
+
+    ignore_labels = [] # ['nochange']
+
+    pre_transform, transform = NormalizeScale(), SamplePoints(1024)
+
+    train_dataset = ChangeDataset(data_root_path, train=True, clearance=3, ignore_labels=ignore_labels, transform=transform, pre_transform=pre_transform)
+    test_dataset = ChangeDataset(data_root_path, train=False, clearance=3, ignore_labels=ignore_labels, transform=transform, pre_transform=pre_transform)
+
+    NUM_CLASS = len(train_dataset.class_labels)
+
+    sampler = ImbalancedDatasetSampler(train_dataset)
+
+    if not USING_IMBALANCE_SAMPLING:
+        train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=4)
+    else:
+        train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=False, num_workers=4, sampler=sampler)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = Net().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = Net().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+    scheduler = StepLR(optimizer, step_size=15, gamma=0.1)
+
+    test_accs = []
+    max_acc = 0
+    for epoch in range(1, 201):
+        train(epoch) # Train one epoch
+        test_acc = test(train_loader) # Test
+        scheduler.step() # Update learning rate
+        if test_acc > max_acc:
+            torch.save(model.state_dict(), 'best_gcn_model.pth')
+            max_acc = test_acc
+        print('Epoch: {:03d}, Test: {:.4f}'.format(epoch, test_acc))
