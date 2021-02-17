@@ -6,6 +6,15 @@ from laspy.file import File
 import numpy as np
 import pandas as pd
 
+import argparse
+import sys
+from io import StringIO
+import functools
+
+import logging
+
+
+
 def random_subsample(points,n_samples):
     if points.shape[0]==0:
         print('No points found at this center replacing with dummy')
@@ -81,3 +90,51 @@ def extract_area(full_cloud,center,clearance,shape= 'cylinder'):
     out[:,3:6] /= 65535.0
     return out
 
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+def set_logger(logFilename):
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s-%(levelname)s-%(message)s',
+        datefmt='%y-%m-%d %H:%M',
+        filename=logFilename,
+        filemode='w')
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s-%(levelname)s-%(message)s')
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
+
+def check_dirs(dirname):
+    if osp.isdir(dirname) is False:
+        os.makedirs(dirname)
+
+# ```A decorator for parse string from print function ```
+
+def get_print_string(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kw):
+        old_std_out = sys.stdout
+        new_std_out = StringIO()
+        sys.stdout = new_std_out
+        func(*args, **kw)
+        sys.stdout = old_std_out
+        return new_std_out.getvalue()
+    return wrapper
+
+@get_print_string
+def get_string_from_print(*args, **kw):
+    print(*args, **kw)
+
+def ktprint(*args, **kw):    
+    logging.info(get_string_from_print(*args, **kw))

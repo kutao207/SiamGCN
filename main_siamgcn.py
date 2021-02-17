@@ -116,7 +116,7 @@ def test(loader):
 
     print('Epoch: {:03d}, Test: {:.4f}, per_class_acc: {}'.format(epoch, test_acc, confusion_matrix.get_per_class_accuracy()))
 
-    return test_acc
+    return test_acc, confusion_matrix.get_per_class_accuracy()
 
 
 if __name__ == '__main__':
@@ -150,11 +150,13 @@ if __name__ == '__main__':
 
     test_accs = []
     max_acc = 0
+    epoch_best = 1
     for epoch in range(1, 201):
         train(epoch) # Train one epoch
-        test_acc = test(train_loader) # Test
+        test_acc, per_cls_acc = test(train_loader) # Test
         scheduler.step() # Update learning rate
         if test_acc > max_acc:
             torch.save(model.state_dict(), 'best_gcn_model.pth')
             max_acc = test_acc
-        print('Epoch: {:03d}, Test: {:.4f}'.format(epoch, test_acc))
+            epoch_best = epoch
+    print('Epoch: {:03d}, get best acc: {:.4f}, per class acc: {}'.format(epoch, test_acc, per_cls_acc))
