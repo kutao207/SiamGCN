@@ -1,3 +1,4 @@
+import os
 import os.path as osp
 
 import torch
@@ -27,8 +28,8 @@ class Net(torch.nn.Module):
         super().__init__()
 
         self.conv1 = DynamicEdgeConv(MLP([2 * 6, 64, 64, 64]), k, aggr)
-        self.conv2 = DynamicEdgeConv(MLP([2 * 64, 128]), k, aggr)
-        self.lin = MLP([128 + 64, 512])
+        self.conv2 = DynamicEdgeConv(MLP([2 * 64, 256]), k, aggr)
+        self.lin = MLP([256, 512])
 
         self.lin_1 = Lin(512, 128)
         self.lin_2 = Lin(512, 128)
@@ -59,12 +60,19 @@ class Net(torch.nn.Module):
         b2_out_1 = self.conv1(data.x2, data.batch2)
         b2_out_2 = self.conv2(b2_out_1, data.batch2)
 
-        x = b2_out_2 - b2_out_1
+        b1_out = global_max_pool(b1_out_2, data.batch)
+        b2_out = global_max_pool(b2_out_2, data.batch2)
 
-        x = self.lin(x)
+        b1, b2 = self.lin(b1_out), self.lin(b2_out)
+
+        x = b2 - b1
+
+       
         x1, x2 = self.lin_1(x), self.lin_2(x)
 
         x_out = F.dropout(F.relu(x1-x2), p=0.6)
+
+        x_out = self.mlp(x_out)
 
         return F.log_softmax(x_out, dim=-1)
 
@@ -133,10 +141,7 @@ if __name__ == '__main__':
     else:
         train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=False, num_workers=4, sampler=sampler)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = Net().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
