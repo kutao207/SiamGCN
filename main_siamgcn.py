@@ -1,6 +1,8 @@
 import os
 import os.path as osp
 
+from datetime import datetime
+
 import torch
 import torch.nn.functional as F
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Dropout
@@ -16,7 +18,17 @@ from pointnet2 import MLP
 
 from torch_geometric.nn import DynamicEdgeConv, global_max_pool
 
+from utils import ktprint, set_logger, check_dirs
 
+#### log file setting
+print  = ktprint
+cur_filename = osp.splitext(osp.basename(__file__))[0]
+log_dir = 'logs'
+check_dirs(log_dir)
+log_filename = osp.join(log_dir, '{}_{date:%Y-%m-%d_%H_%M_%S}'.format(cur_filename, date=datetime.now())+'.logging')
+set_logger(log_filename)
+
+#### log file setting finished!
 #     0           1       2         3         4
 # ["nochange","removed","added","change","color_change"]
 
@@ -144,6 +156,8 @@ if __name__ == '__main__':
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net().to(device)
+    print(f"Using model: {model.__name__}")
+
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     scheduler = StepLR(optimizer, step_size=15, gamma=0.1)
