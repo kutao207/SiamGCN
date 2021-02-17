@@ -11,6 +11,10 @@ from change_dataset import ChangeDataset, MyDataLoader
 from transforms import NormalizeScale, SamplePoints
 from metric import ConfusionMatrix
 from imbalanced_sampler import ImbalancedDatasetSampler
+from pointnet2 import MLP
+
+from torch_geometric.nn import DynamicEdgeConv, global_max_pool
+
 
 #     0           1       2         3         4
 # ["nochange","removed","added","change","color_change"]
@@ -19,10 +23,19 @@ NUM_CLASS = 5
 USING_IMBALANCE_SAMPLING = True
 
 class Net(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, k=20, aggr='max') -> None:
         super().__init__()
 
+        self.conv1 = DynamicEdgeConv(MLP([2 * 6, 64, 64, 64]), k, aggr)
+        self.conv2 = DynamicEdgeConv(MLP([2 * 64, 128]), k, aggr)
+        self.lin = MLP([128 + 64, 512])
 
+        self.lin_1 = Lin(512, 128)
+        self.lin_2 = Lin(512, 128)
+
+        self.mlp = Seq(
+            MLP([128, 64]), Dropout(0.5),
+            Lin(64, NUM_CLASS))
     
     def forward(self, data):
         r""""
@@ -36,8 +49,26 @@ class Net(torch.nn.Module):
             out: []， Bx[NUM_CLASS]
         """
 
-        b1_input = (data.x[:, 3:], data.x2[:, 3:6], data.batch)
+        b1_input = (data.x[:, 3:], data.x[:,:3], data.batch) # (feature, position, batch)
         b2_input = (data.x2[:,3:], data.x2[:,:3], data.batch2)
+
+        b1_out_1 = self.conv1(data.x, data.batch)
+        b1_out_2 = self.conv2(b1_out_1, data.batch)
+
+
+        b2_out_1 = self.conv1(data.x2, data.batch2)
+        b2_out_2 = self.conv2(b2_out_1, data.batch2)
+
+        x = b2_out_2 - b2_out_1
+
+        x = self.lin(x)
+        x1, x2 = self.lin_1(x), self.lin_2(x)
+
+        x_out = F.dropout(F.relu(x1-x2), p=0.6)
+
+        return F.log_softmax(x_out, dim=-1)
+
+
 
 def train(epoch):
     model.train()
