@@ -2,7 +2,6 @@ import os
 import os.path as osp
 
 import torch
-
 from main_pointnet import Net
 from transforms import NormalizeScale, SamplePoints
 from change_dataset import ChangeDataset, MyDataLoader

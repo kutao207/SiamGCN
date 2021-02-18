@@ -27,6 +27,7 @@ from utils import makedirs, files_exist, to_list, find_file
 
 from imblearn.over_sampling import RandomOverSampler
 
+
 class ChangeBatch(Batch):
     def __init__(self, batch=None, ptr=None, **kwargs):
         super().__init__(batch=batch, ptr=ptr, **kwargs)

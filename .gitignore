@@ -137,3 +137,5 @@ torch_cluster*/
 imbalanced-learn/
 imblearn/
 backup/
+logs/
+*.pth

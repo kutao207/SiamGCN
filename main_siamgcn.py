@@ -88,6 +88,56 @@ class Net(torch.nn.Module):
 
         return F.log_softmax(x_out, dim=-1)
 
+class Net_2(torch.nn.Module):
+    def __init__(self, k=20, aggr='max') -> None:
+        super().__init__()
+
+        self.conv1 = DynamicEdgeConv(MLP([2 * 6, 64, 64, 64]), k, aggr)
+        self.conv2 = DynamicEdgeConv(MLP([2 * 64, 256]), k, aggr)
+        # self.lin = MLP([256, 512])
+
+        # self.lin_1 = Lin(512, 128)
+        # self.lin_2 = Lin(512, 128)
+
+        # self.mlp = Seq(
+        #     MLP([128, 64]), Dropout(0.5),
+        #     Lin(64, NUM_CLASS))
+        self.mlp2 = Seq(
+            MLP([256, 64]), Dropout(0.5),
+            Lin(64, NUM_CLASS))
+    
+    def forward(self, data):
+        r""""
+        Args:
+            data: [x], BN x 6, point clouds of 2016
+                  [x2], BN x 6, point clouds of 2020
+                  [batch], BN1, batch index of point clouds in 2016
+                  [batch2], BN2, batch index of point clouds in 2020
+                  [y], B, label
+        Returns:
+            out: []， Bx[NUM_CLASS]
+        """        
+        # A simplified network
+        b1_out_1 = self.conv1(data.x, data.batch)
+        b1_out_2 = self.conv2(b1_out_1, data.batch)
+
+
+        b2_out_1 = self.conv1(data.x2, data.batch2)
+        b2_out_2 = self.conv2(b2_out_1, data.batch2)
+
+        b1_out = global_max_pool(b1_out_2, data.batch)
+        b2_out = global_max_pool(b2_out_2, data.batch2)
+
+        # b1, b2 = self.lin(b1_out), self.lin(b2_out)
+        # x = b2 - b1       
+        # x1, x2 = self.lin_1(x), self.lin_2(x)
+        # x_out = F.dropout(F.relu(x1-x2), p=0.6)
+
+        x_out = b2_out - b1_out
+
+        x_out = self.mlp2(x_out)
+
+        return F.log_softmax(x_out, dim=-1)
 
 
 def train(epoch):
@@ -170,7 +220,7 @@ if __name__ == '__main__':
         test_acc, per_cls_acc = test(train_loader) # Test
         scheduler.step() # Update learning rate
         if test_acc > max_acc:
-            torch.save(model.state_dict(), 'best_gcn_model.pth')
+            torch.save(model.state_dict(), f'best_gcn_model_epoch_{epoch}_{model.__name__}.pth')
             max_acc = test_acc
             epoch_best = epoch
-    print('Epoch: {:03d}, get best acc: {:.4f}, per class acc: {}'.format(epoch, test_acc, per_cls_acc))
+    print('Epoch: {:03d}, get best acc: {:.4f}, per class acc: {}'.format(epoch_best, test_acc, per_cls_acc))
