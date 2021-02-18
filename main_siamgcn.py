@@ -2,6 +2,7 @@ import os
 import os.path as osp
 
 from datetime import datetime
+import argparse
 
 import torch
 import torch.nn.functional as F
@@ -180,6 +181,16 @@ def test(loader):
 
     return test_acc, confusion_matrix.get_per_class_accuracy()
 
+def get_args():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--batch_size', type=int, default=8, help='batch size')
+    parser.add_argument('--num_workers', type=int, default=4)
+    
+    return parser.parse_args()
+
+
+
 
 if __name__ == '__main__':
 
@@ -188,6 +199,9 @@ if __name__ == '__main__':
         data_root_path = 'F:/shrec2021/data'
 
     ignore_labels = [] # ['nochange']
+
+    my_args = get_args()
+    print(my_args)
 
     pre_transform, transform = NormalizeScale(), SamplePoints(1024)
 
@@ -199,9 +213,9 @@ if __name__ == '__main__':
     sampler = ImbalancedDatasetSampler(train_dataset)
 
     if not USING_IMBALANCE_SAMPLING:
-        train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=4)
+        train_loader = MyDataLoader(train_dataset, batch_size=my_args.batch_size, shuffle=True, num_workers=my_args.num_workers)
     else:
-        train_loader = MyDataLoader(train_dataset, batch_size=8, shuffle=False, num_workers=4, sampler=sampler)
+        train_loader = MyDataLoader(train_dataset, batch_size=my_args.batch_size, shuffle=False, num_workers=my_args.num_workers, sampler=sampler)
 
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

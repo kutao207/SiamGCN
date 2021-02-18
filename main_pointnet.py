@@ -1,6 +1,9 @@
 import os
 import os.path as osp
 
+import argparse
+from datetime import datetime
+
 import torch 
 import torch.nn.functional as F
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, BatchNorm1d as BN, Dropout
@@ -20,6 +23,19 @@ from contrastive_loss import ContrastiveLoss
 from imbalanced_sampler import ImbalancedDatasetSampler
 
 from pointnet2 import SAModule, GlobalSAModule, MLP
+
+from utils import ktprint, set_logger, check_dirs
+
+#### log file setting
+
+cur_filename = osp.splitext(osp.basename(__file__))[0]
+log_dir = 'logs'
+check_dirs(log_dir)
+log_filename = osp.join(log_dir, '{}_{date:%Y-%m-%d_%H_%M_%S}'.format(cur_filename, date=datetime.now())+'.logging')
+set_logger(log_filename)
+print  = ktprint
+#### log file setting finished!
+
 
 #     0           1       2         3         4
 # ["nochange","removed","added","change","color_change"]
@@ -236,6 +252,66 @@ class Net_2(torch.nn.Module):
 
         # return (x1_out, x2_out)
 
+class Net_3(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        input_feature_dim = 6
+        self.sa1_module = SAModule(0.5, 0.2, MLP([input_feature_dim, 64, 64, 128]))
+        # self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
+        # self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
+        self.sa3_module = GlobalSAModule(MLP([128 + 3, 256, 512, 1024]))
+
+        # self.lin1 = Lin(1024, 512)
+        # self.lin2 = Lin(512, 256)
+        # self.lin3 = Lin(256, NUM_CLASS)
+
+        # self.lin = Seq(
+        #     Lin(1024, 512), ReLU(), Dropout(p=0.5),
+        #     Lin(512, 256), ReLU(), Dropout(p=0.5)            
+        #     )
+        # self.lin_1 = Lin(256, NUM_CLASS)
+        # self.lin_2 = Lin(256, NUM_CLASS)
+
+        self.lin = Seq(
+            Lin(1024, 256), ReLU(), Dropout(p=0.5)         
+            )
+        self.lin_1 = Lin(256, 128)
+        self.lin_2 = Lin(256, 128)
+
+        self.lin_last = Lin(128, NUM_CLASS)
+
+    def forward(self, data):
+        sa0_b1_input = (data.x[:,3:], data.x[:,:3], data.batch)
+        sa0_b2_input = (data.x2[:,3:], data.x2[:,:3], data.batch2)
+
+        # Using less layers
+
+        # sa1_b1_out = self.sa1_module(*sa0_b1_input)
+        # sa2_b1_out = self.sa2_module(*sa1_b1_out)
+        # sa3_b1_out = self.sa3_module(*sa2_b1_out)
+
+        # sa1_b2_out = self.sa1_module(*sa0_b2_input)
+        # sa2_b2_out = self.sa2_module(*sa1_b2_out)
+        # sa3_b2_out = self.sa3_module(*sa2_b2_out)
+
+        sa1_b1_out = self.sa1_module(*sa0_b1_input)        
+        sa3_b1_out = self.sa3_module(*sa1_b1_out)
+
+        sa1_b2_out = self.sa1_module(*sa0_b2_input)        
+        sa3_b2_out = self.sa3_module(*sa1_b2_out)
+
+        x1, pos1, _ = sa3_b1_out
+        x2, pos2, _ = sa3_b2_out
+
+        x = x1 - x2
+
+        x = self.lin(x)
+        x1, x2 = self.lin_1(x), self.lin_2(x)
+        x_out = F.dropout(F.relu(x1-x2), p=0.6)
+
+        x_out = self.lin_last(x_out)
+
+        return F.log_softmax(x_out, dim=-1)
 
 def train(epoch):
     model.train()
@@ -289,7 +365,7 @@ def test(loader):
     
     test_acc = correct / len(loader.dataset)
     print('Epoch: {:03d}, Test: {:.4f}, per_class_acc: {}'.format(epoch, test_acc, confusion_matrix.get_per_class_accuracy()))
-    return test_acc
+    return test_acc, confusion_matrix.get_per_class_accuracy()
 
 def inference(loader, path='best_pointnet_model.pth'):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -363,15 +439,19 @@ if __name__ == '__main__':
 
     test_accs = []
     max_acc = 0
+    epoch_best = 1
     for epoch in range(1, 201):
         train(epoch)
-        test_acc = test(train_loader)
+        test_acc, per_cls_acc = test(train_loader)
 
         scheduler.step()
 
         if test_acc > max_acc:
-            torch.save(model.state_dict(), 'best_pointnet_model_net2.pth')
+            torch.save(model.state_dict(), f'best_pointnet_model_{model.__class__.__name__}.pth')
             max_acc = test_acc
+            epoch_best = epoch
+    
+    print('Epoch: {:03d}, get best acc: {:.4f}, per class acc: {}'.format(epoch_best, test_acc, per_cls_acc))
         
 
         # print("Breakpoint")
