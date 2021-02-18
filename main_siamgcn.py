@@ -230,8 +230,9 @@ if __name__ == '__main__':
 
     scheduler = StepLR(optimizer, step_size=15, gamma=0.1)
 
-    test_accs = []
+    # test_accs = []
     max_acc = 0
+    max_per_cls = None
     epoch_best = 1
     for epoch in range(1, 201):
         train(epoch) # Train one epoch
@@ -240,5 +241,6 @@ if __name__ == '__main__':
         if test_acc > max_acc:
             torch.save(model.state_dict(), f'best_gcn_model_{model.__class__.__name__}.pth')
             max_acc = test_acc
+            max_per_cls = per_cls_acc
             epoch_best = epoch
-    print('Epoch: {:03d}, get best acc: {:.4f}, per class acc: {}'.format(epoch_best, test_acc, per_cls_acc))
+    print('Epoch: {:03d}, get best acc: {:.4f}, per class acc: {}'.format(epoch_best, max_acc, max_per_cls))
