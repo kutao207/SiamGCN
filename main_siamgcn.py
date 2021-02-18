@@ -205,8 +205,12 @@ if __name__ == '__main__':
 
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = Net().to(device)
-    print(f"Using model: {model.__name__}")
+
+    # model = Net().to(device)
+    model = Net_2().to(device)
+
+
+    print(f"Using model: {model.__class__.__name__}")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -220,7 +224,7 @@ if __name__ == '__main__':
         test_acc, per_cls_acc = test(train_loader) # Test
         scheduler.step() # Update learning rate
         if test_acc > max_acc:
-            torch.save(model.state_dict(), f'best_gcn_model_epoch_{epoch}_{model.__name__}.pth')
+            torch.save(model.state_dict(), f'best_gcn_model_epoch_{epoch}_{model.__class__.__name__}.pth')
             max_acc = test_acc
             epoch_best = epoch
     print('Epoch: {:03d}, get best acc: {:.4f}, per class acc: {}'.format(epoch_best, test_acc, per_cls_acc))
