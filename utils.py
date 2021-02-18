@@ -129,7 +129,7 @@ def get_print_string(func):
         sys.stdout = new_std_out
         func(*args, **kw)
         sys.stdout = old_std_out
-        return new_std_out.getvalue()
+        return new_std_out.getvalue().strip()
     return wrapper
 
 @get_print_string
