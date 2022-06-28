@@ -3,6 +3,7 @@ import os.path as osp
 
 from datetime import datetime
 import argparse
+import pickle
 
 import torch
 import torch.nn.functional as F
@@ -141,13 +142,15 @@ class Net_2(torch.nn.Module):
         return F.log_softmax(x_out, dim=-1)
 
 
-def train(epoch):
+def train(epoch, loader):
     model.train()
 
     confusion_matrix = ConfusionMatrix(NUM_CLASS + 1)
 
     correct = 0
-    for data in train_loader:
+    # for data in train_loader:
+    for data in loader:
+    # for data in test_loader:
         data = data.to(device)
         optimizer.zero_grad()        
 
@@ -161,13 +164,14 @@ def train(epoch):
 
         confusion_matrix.increment_from_list(data.y.cpu().detach().numpy() + 1, pred.cpu().detach().numpy() + 1)
     
-    train_acc = correct / len(train_loader.dataset)
+    train_acc = correct / len(loader.dataset)
     print('Epoch: {:03d}, Train: {:.4f}, per_class_acc: {}'.format(epoch, train_acc, confusion_matrix.get_per_class_accuracy()))
 
 def test(loader):
     model.eval()
     confusion_matrix = ConfusionMatrix(NUM_CLASS+1)
     correct = 0
+    # for data in loader:
     for data in loader:
         data = data.to(device)
         with torch.no_grad():
@@ -179,7 +183,7 @@ def test(loader):
 
     print('Epoch: {:03d}, Test: {:.4f}, per_class_acc: {}'.format(epoch, test_acc, confusion_matrix.get_per_class_accuracy()))
 
-    return test_acc, confusion_matrix.get_per_class_accuracy()
+    return test_acc, confusion_matrix.get_per_class_accuracy(), confusion_matrix
 
 def get_args():
 
@@ -207,16 +211,26 @@ if __name__ == '__main__':
 
     train_dataset = ChangeDataset(data_root_path, train=True, clearance=3, ignore_labels=ignore_labels, transform=transform, pre_transform=pre_transform)
     test_dataset = ChangeDataset(data_root_path, train=False, clearance=3, ignore_labels=ignore_labels, transform=transform, pre_transform=pre_transform)
+    # t_size = my_args.batch_size* (len(test_dataset)//my_args.batch_size)
+    # test_dataset = test_dataset[:t_size]
+    a = len(test_dataset)
 
     NUM_CLASS = len(train_dataset.class_labels)
 
-    sampler = ImbalancedDatasetSampler(train_dataset)
+    train_sampler = ImbalancedDatasetSampler(train_dataset)
+    test_sampler = ImbalancedDatasetSampler(test_dataset)
+    test_sampler.set_sampler_like(train_sampler)
 
     if not USING_IMBALANCE_SAMPLING:
         train_loader = MyDataLoader(train_dataset, batch_size=my_args.batch_size, shuffle=True, num_workers=my_args.num_workers)
+        test_loader = MyDataLoader(test_dataset, batch_size=my_args.batch_size, shuffle=True, num_workers=my_args.num_workers)
     else:
-        train_loader = MyDataLoader(train_dataset, batch_size=my_args.batch_size, shuffle=False, num_workers=my_args.num_workers, sampler=sampler)
+        train_loader = MyDataLoader(train_dataset, batch_size=my_args.batch_size, shuffle=False, num_workers=my_args.num_workers, sampler=train_sampler)
+        # test_loader = MyDataLoader(test_dataset, batch_size=my_args.batch_size, shuffle=False, num_workers=my_args.num_workers, sampler=test_sampler, drop_last=True)
+        test_loader = MyDataLoader(test_dataset, batch_size=my_args.batch_size, shuffle=False, num_workers=my_args.num_workers, drop_last=True)
 
+    # a = len(train_loader)
+    # b = len(test_loader)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -235,11 +249,15 @@ if __name__ == '__main__':
     max_per_cls = None
     epoch_best = 1
     for epoch in range(1, 201):
-        train(epoch) # Train one epoch
-        test_acc, per_cls_acc = test(train_loader) # Test
+        train(epoch, train_loader) # Train one epoch
+        # test_acc, per_cls_acc, conf = test(test_loader) # Test
+        test_acc, per_cls_acc, conf = test(test_loader)
         scheduler.step() # Update learning rate
         if test_acc > max_acc:
             torch.save(model.state_dict(), f'best_gcn_model_{model.__class__.__name__}.pth')
+            with open(f'best_gcn_model_conf_{model.__class__.__name__}.pickle', 'wb') as f:
+                pickle.dump(conf, f, protocol=pickle.HIGHEST_PROTOCOL)
+
             max_acc = test_acc
             max_per_cls = per_cls_acc
             epoch_best = epoch
